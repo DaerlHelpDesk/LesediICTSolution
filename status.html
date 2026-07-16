@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Check Support Status | Lesedi ICT Solutions</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a class="brand" href="index.html">Lesedi ICT Solutions</a>
+      <div class="nav-links"><a href="index.html#services">Services</a><a href="index.html#contact">Request a Service</a></div>
+    </nav>
+    <div class="hero"><div><h1>Check your support status</h1><p>Enter the ticket number provided after you submitted your service request.</p></div></div>
+  </header>
+  <main>
+    <section>
+      <div class="panel status-panel">
+        <h2>Service ticket status</h2>
+        <form id="statusForm">
+          <label for="statusTicket">Ticket number</label>
+          <input id="statusTicket" placeholder="For example: LES-ABC123-456" required>
+          <button type="submit">Check Status</button>
+        </form>
+        <div id="statusResult" class="status-result" role="status" aria-live="polite"></div>
+        <div id="replyList" class="reply-list"></div>
+        <p class="status-note">Status is securely loaded from the Lesedi ICT ticket system.</p>
+      </div>
+    </section>
+  </main>
+  <footer><h2>Lesedi ICT Solutions</h2><p>ghavysa@gmail.com · +27 78 313 8897</p></footer>
+  <script src="assets/js/supabase-config.js"></script>
+  <script>
+    const ticketInput = document.getElementById('statusTicket');
+    const result = document.getElementById('statusResult');
+    async function displayStatus() {
+      const ticket = ticketInput.value.trim().toUpperCase();
+      let records;
+      try {
+        records = await supabaseRequest(`ticket_statuses?ticket_number=eq.${encodeURIComponent(ticket)}&select=ticket_number,status,service,created_at`);
+      } catch (error) {
+        result.className = 'status-result error';
+        result.textContent = 'We could not connect to the ticket system. Please try again shortly.';
+        return;
+      }
+      const record = records[0];
+      if (!record) {
+        result.className = 'status-result error';
+        result.textContent = 'We could not find that ticket in this browser. Please check the number or contact us directly.';
+        return;
+      }
+      result.className = 'status-result success';
+      result.innerHTML = `<strong>${record.ticket_number}</strong><br>Status: ${record.status}<br>Service: ${record.service}<br>Submitted: ${new Date(record.created_at).toLocaleString()}`;
+      const replies = await supabaseRequest(`ticket_replies?ticket_number=eq.${encodeURIComponent(ticket)}&select=message,created_at&order=created_at.asc`);
+      const replyList = document.getElementById('replyList');
+      replyList.replaceChildren();
+      replies.forEach((reply) => {
+        const item = document.createElement('p');
+        item.className = 'ticket-reply';
+        item.textContent = `Technician reply (${new Date(reply.created_at).toLocaleString()}): ${reply.message}`;
+        replyList.appendChild(item);
+      });
+    }
+    const prefilledTicket = new URLSearchParams(location.search).get('ticket');
+    if (prefilledTicket) { ticketInput.value = prefilledTicket; displayStatus(); }
+    document.getElementById('statusForm').addEventListener('submit', (event) => { event.preventDefault(); displayStatus(); });
+  </script>
+</body>
+</html>

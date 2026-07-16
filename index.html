@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesedi ICT Solutions</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <div class="brand">Lesedi ICT Solutions</div>
+      <div class="nav-links">
+        <a href="#services">Services</a>
+        <a href="#estimate">Quick Estimate</a>
+        <a href="status.html">Check Status</a>
+        <a href="#contact">Contact</a>
+      </div>
+    </nav>
+    <div class="hero">
+      <div>
+        <h1>Reliable tech support for homes and businesses</h1>
+        <p>From Microsoft 365 and networking to secure cloud setups and remote support, we help your team stay productive and protected.</p>
+        <div class="buttons">
+          <a href="tel:+27783138897" class="btn call">Call Now</a>
+          <a href="mailto:ghavysa@gmail.com" class="btn email">Email Us</a>
+          <a href="https://wa.me/27783138897" class="btn whatsapp">WhatsApp</a>
+        </div>
+        <div class="stats">
+          <div class="stat-box"><strong>24/7</strong><span>Remote support</span></div>
+          <div class="stat-box"><strong>100+</strong><span>Projects completed</span></div>
+          <div class="stat-box"><strong>4.9/5</strong><span>Client rating</span></div>
+        </div>
+      </div>
+      <div class="hero-card">
+        <h2>Why clients choose us</h2>
+        <ul>
+          <li>Fast response times</li>
+          <li>Friendly local support</li>
+          <li>Affordable packages</li>
+          <li>Secure and scalable solutions</li>
+        </ul>
+      </div>
+    </div>
+  </header>
+
+  <section id="services">
+    <div class="section-title"><h2>Our Services</h2><p>Practical support tailored to your technology needs.</p></div>
+    <div class="cards">
+      <article class="card"><div class="icon">Microsoft 365</div><h3>Microsoft 365</h3><p>Email, Teams, SharePoint and licensing support for growing teams.</p></article>
+      <article class="card"><div class="icon">Networking</div><h3>Networking</h3><p>Wi-Fi, LAN, routers, switches and network troubleshooting.</p></article>
+      <article class="card"><div class="icon">Remote</div><h3>Remote Support</h3><p>Quick assistance for software issues, setup and device problems.</p></article>
+      <article class="card"><div class="icon">Web</div><h3>Website Development</h3><p>Modern websites, online systems and a stronger business presence.</p></article>
+      <article class="card"><div class="icon">Cloud</div><h3>Azure Cloud</h3><p>Cloud migration, virtual machines and secure administration.</p></article>
+      <article class="card"><div class="icon">Security</div><h3>Cyber Security</h3><p>Backups, endpoint protection and guidance to reduce risk.</p></article>
+    </div>
+  </section>
+
+  <section>
+    <div class="grid-2">
+      <div class="panel" id="estimate">
+        <h2>Quick Estimate</h2>
+        <p>Choose a service and size to estimate the likely starting cost.</p>
+        <form id="estimateForm">
+          <select id="serviceType" aria-label="Service type"><option>Microsoft 365</option><option>Networking</option><option>Website Development</option><option>Remote Support</option><option>Azure Cloud</option><option>Security</option></select>
+          <select id="teamSize" aria-label="Team size"><option value="1">1–5 users</option><option value="2">6–15 users</option><option value="3">16+ users</option></select>
+          <select id="urgency" aria-label="Urgency"><option value="1">Standard</option><option value="2">Priority</option><option value="3">Urgent</option></select>
+          <button type="submit">Calculate Estimate</button>
+        </form>
+        <div class="quote-box" id="quoteResult">Estimated starting cost: R0</div>
+      </div>
+      <div class="panel" id="contact">
+        <h2>Request a Service</h2>
+        <form id="serviceRequestForm" onsubmit="sendRequest(event)">
+          <input id="name" name="name" placeholder="Full Name" required>
+          <input id="email" name="email" type="email" placeholder="Email Address" required>
+          <input id="company" name="company" placeholder="Company Name">
+          <input id="phone" name="phone" type="tel" placeholder="Phone Number">
+          <select id="contactTime" name="preferred_contact_time" aria-label="Preferred contact time" required>
+            <option value="" disabled selected>Preferred contact time</option>
+            <option>Morning (08:00–12:00)</option>
+            <option>Afternoon (12:00–17:00)</option>
+            <option>Evening (17:00–20:00)</option>
+          </select>
+          <select id="service" name="service"><option>Microsoft 365</option><option>Networking</option><option>Website Development</option><option>Remote Support</option><option>Azure Cloud</option><option>Cyber Security</option><option>Other</option></select>
+          <textarea id="desc" name="description" placeholder="Tell us about your issue or project..." required></textarea>
+          <input type="hidden" name="_subject" value="New ICT Service Request">
+          <input id="ticketNumber" type="hidden" name="ticket_number">
+          <button type="submit">Submit Request</button>
+          <p id="requestStatus" class="request-status" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-title"><h2>Frequently Asked Questions</h2><p>Quick answers to common questions.</p></div>
+    <div class="panel">
+      <div class="faq-item active"><button class="faq-question" type="button">Do you offer remote support? <span>+</span></button><p class="faq-answer">Yes. We can assist remotely with many support requests and system issues.</p></div>
+      <div class="faq-item"><button class="faq-question" type="button">Can you help with Microsoft 365? <span>+</span></button><p class="faq-answer">Absolutely. We support account setup, Teams, Exchange, SharePoint and licensing.</p></div>
+      <div class="faq-item"><button class="faq-question" type="button">Do you work with small businesses? <span>+</span></button><p class="faq-answer">Yes. We tailor practical solutions for small and medium-sized businesses.</p></div>
+    </div>
+  </section>
+
+  <footer><h2>Lesedi ICT Solutions</h2><p>Professional IT Support for Individuals &amp; Businesses</p><p>ghavysa@gmail.com · +27 78 313 8897</p></footer>
+  <script src="assets/js/supabase-config.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

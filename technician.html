@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Technician Dashboard | Lesedi ICT</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <style>
+    .card.highlight{box-shadow:0 0 0 3px rgba(0,150,0,0.12);transition:box-shadow .25s}
+    #toastContainer{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:1000}
+    .toast{background:#333;color:#fff;padding:10px 14px;border-radius:6px;opacity:.95}
+    .toast.success{background:#2b8a3e}
+    .toast.error{background:#b02a37}
+  </style>
+</head>
+<body>
+<header>
+  <nav>
+    <a class="brand" href="index.html">Lesedi ICT Solutions</a>
+    <div class="nav-links"><a href="index.html">Website</a><a href="status.html">Ticket Status</a></div>
+  </nav>
+  <div class="hero"><div><h1>Technician dashboard</h1><p>Review requests, update their status, and reply to clients.</p></div></div>
+</header>
+<main>
+  <section id="loginSection">
+    <div class="panel">
+      <h2>Technician sign in</h2>
+      <form id="loginForm">
+        <input id="loginEmail" type="email" placeholder="Technician email" required>
+        <input id="loginPassword" type="password" placeholder="Password" required>
+        <button>Sign In</button>
+        <button id="signupButton" type="button">Create Technician Account</button>
+        <p id="loginMessage" class="request-status"></p>
+      </form>
+    </div>
+  </section>
+  <section id="dashboardSection" hidden>
+    <div class="section-title"><h2>Service requests</h2><p id="dashboardMessage">Loading…</p></div>
+    <div id="ticketList" class="cards"></div>
+  </section>
+</main>
+
+<footer><h2>Lesedi ICT Solutions</h2><p>Technician access only</p></footer>
+
+<script src="assets/js/supabase-config.js"></script>
+<script>
+let accessToken=sessionStorage.getItem('lesedi-tech-token');
+const loginSection=document.getElementById('loginSection'),dashboardSection=document.getElementById('dashboardSection'),ticketList=document.getElementById('ticketList'),dashboardMessage=document.getElementById('dashboardMessage');
+const authOptions=(options={})=>({...options,headers:{...options.headers,Authorization:`Bearer ${accessToken}`}});
+let prevStates={};
+let pollTimer=null;
+const POLL_INTERVAL=5000;
+
+function showToast(text,type=''){
+  const container=document.getElementById('toastContainer')||document.createElement('div');
+  container.id='toastContainer';
+  if(!document.body.contains(container))document.body.appendChild(container);
+  const t=document.createElement('div');t.className=`toast ${type||''}`;t.textContent=text;container.appendChild(t);
+  setTimeout(()=>{t.style.transition='opacity .35s';t.style.opacity='0';setTimeout(()=>t.remove(),400)},4000);
+}
+
+function notifyStatusChange(ticketNumber,newStatus,source='remote'){
+  showToast(`${ticketNumber}: ${newStatus}${source==='local'?' (you)':''}`, source==='local' ? 'success' : '');
+  const card = ticketList.querySelector(`article.card[data-ticket="${ticketNumber}"]`);
+  if(card){
+    const sel = card.querySelector('select');
+    if(sel && sel.value !== newStatus) sel.value = newStatus;
+    const msg = card.querySelector('.request-status');
+    if(msg){ msg.className = 'request-status success'; msg.textContent = source==='local' ? 'Status updated.' : `Status changed to "${newStatus}".`; }
+    card.classList.add('highlight');
+    setTimeout(()=>card.classList.remove('highlight'),3500);
+  }
+}
+
+async function loadTickets(){
+  try{
+    const approved=await supabaseRequest('rpc/is_approved_technician',authOptions({method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}));
+    if(!approved){dashboardMessage.textContent='Your technician account is waiting for approval. In Supabase, set technician_profiles.approved to true for your account.';return}
+    const [requests,statuses]=await Promise.all([
+      supabaseRequest('service_requests?select=ticket_number,name,email,phone,preferred_contact_time,service,description,created_at&order=created_at.desc',authOptions()),
+      supabaseRequest('ticket_statuses?select=ticket_number,status',authOptions())
+    ]);
+    const states=Object.fromEntries(statuses.map(x=>[x.ticket_number,x.status]));
+
+    // detect remote changes compared to previous poll
+    for(const tn in states){
+      if(prevStates[tn] && prevStates[tn] !== states[tn]){
+        notifyStatusChange(tn, states[tn], 'remote');
+      }
+    }
+    prevStates = {...states};
+
+    ticketList.replaceChildren();
+    dashboardMessage.textContent = requests.length?`${requests.length} request(s) found.`:'No service requests yet. Submit a test request from index.html.';
+    requests.forEach(r=>ticketList.append(ticketCard(r,states[r.ticket_number]||'Request received')))
+  }catch{
+    dashboardMessage.textContent='Could not load requests. Check the SQL setup and sign in again.'
+  }
+}
+
+function ticketCard(r,current){
+  const card=document.createElement('article');card.className='card';card.dataset.ticket=r.ticket_number;
+  const heading=document.createElement('h3');heading.textContent=`${r.ticket_number} — ${r.service}`;
+  const details=document.createElement('p');details.textContent=`${r.name} · ${r.email} · ${r.phone||'No phone'} · ${r.preferred_contact_time}`;
+  const desc=document.createElement('p');desc.textContent=r.description;
+  const status=document.createElement('select');['Request received','In progress','Waiting for client','Resolved','Closed'].forEach(v=>status.add(new Option(v,v,false,v===current)));
+  const update=document.createElement('button');update.type='button';update.textContent='Update Status';
+  const reply=document.createElement('textarea');reply.placeholder='Write a reply for the client…';
+  const send=document.createElement('button');send.type='button';send.textContent='Send Reply';
+  const message=document.createElement('p');message.className='request-status';
+
+  update.onclick=async()=>{
+    try{
+      await supabaseRequest('rpc/update_ticket_status',authOptions({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({p_ticket_number:r.ticket_number,p_status:status.value})}));
+      message.className='request-status success';message.textContent='Status updated.';
+      // update local state and notify UI
+      prevStates[r.ticket_number]=status.value;
+      notifyStatusChange(r.ticket_number,status.value,'local');
+    }catch(error){message.className='request-status error';message.textContent=`Could not update status: ${error.message}`}}
+
+  send.onclick=async()=>{if(!reply.value.trim())return;try{await supabaseRequest('ticket_replies',authOptions({method:'POST',headers:{'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({ticket_number:r.ticket_number,message:reply.value.trim()})}));reply.value='';message.className='request-status success';message.textContent='Reply saved for the client.'}catch(error){message.className='request-status error';message.textContent=`Could not send reply: ${error.message}`}};
+
+  card.append(heading,details,desc,status,update,reply,send,message);return card
+}
+
+document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const msg=document.getElementById('loginMessage');try{const res=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:JSON.stringify({email:loginEmail.value,password:loginPassword.value})});if(!res.ok)throw 0;accessToken=(await res.json()).access_token;sessionStorage.setItem('lesedi-tech-token',accessToken);loginSection.hidden=true;dashboardSection.hidden=false;await loadTickets();if(!pollTimer)pollTimer=setInterval(loadTickets,POLL_INTERVAL)}catch{msg.className='request-status error';msg.textContent='Sign-in failed. Check your email and password.'}};
+if(accessToken){loginSection.hidden=true;dashboardSection.hidden=false;loadTickets().then(()=>{if(!pollTimer)pollTimer=setInterval(loadTickets,POLL_INTERVAL)})}
+
+document.getElementById('signupButton').onclick=async()=>{const msg=document.getElementById('loginMessage');if(!loginEmail.value||!loginPassword.value){msg.className='request-status error';msg.textContent='Enter an email and password first.';return}try{const res=await fetch(`${SUPABASE_URL}/auth/v1/signup`,{method:'POST',headers:{apikey:SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:JSON.stringify({email:loginEmail.value,password:loginPassword.value})});if(!res.ok)throw 0;msg.className='request-status success';msg.textContent='Account created. Confirm the email if prompted, then ask an administrator to approve your account.'}catch{msg.className='request-status error';msg.textContent='Could not create the account. The email may already be registered.'}};
+
+</script>
+
+<div id="toastContainer" aria-live="polite"></div>
+
+</body>
+</html>
