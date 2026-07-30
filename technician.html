@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Technician Dashboard | Lesedi ICT</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <style>
+    .card.highlight{box-shadow:0 0 0 3px rgba(0,150,0,0.12);transition:box-shadow .25s}
+    #toastContainer{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:1000}
+    .toast{background:#333;color:#fff;padding:10px 14px;border-radius:6px;opacity:.95}
+    .toast.success{background:#2b8a3e}
+    .toast.error{background:#b02a37}
+    .stats-grid{
+     display:grid;
+     grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+     gap:15px;
+     margin-bottom:20px;
+    }
+
+    .stat-card{
+     background:#fff;
+     border-radius:12px;
+     padding:20px;
+     text-align:center;
+     box-shadow:0 4px 16px rgba(0,0,0,.08);
+    }
+
+    .ticket-search{
+     width:100%;
+     padding:12px;
+     border-radius:10px;
+     margin-bottom:20px;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <nav>
+    <a class="brand" href="index.html">Lesedi ICT Solutions</a>
+    <div class="nav-links"><a href="index.html">Website</a><a href="status.html">Ticket Status</a></div>
+    <button id="logoutBtn" style="margin-left:12px;padding:8px 12px;border-radius:8px;border:0;background:#e5e7ff">Logout</button>
+  </nav>
+  <div class="hero"><div><h1>Technician dashboard</h1><p>Review requests, update their status, and reply to clients.</p></div></div>
+</header>
+<main>
+  <section id="loginSection">
+    <div class="panel">
+      <h2>Technician sign in</h2>
+      <form id="loginForm">
+        <input id="loginEmail" type="email" placeholder="Technician email" autocomplete="email" required>
+        <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" required>
+        <input id="technicianName" type="text" placeholder="Full name" autocomplete="name">
+        <input id="technicianPhone" type="tel" placeholder="Phone number" autocomplete="tel">
+        <button>Sign In</button>
+        <button id="signupButton" type="button">Create Technician Account</button>
+        <p id="loginMessage" class="request-status"></p>
+        <p style="font-size:.95rem;color:#555;margin-top:10px;line-height:1.4em;">If you just created an account, you must confirm your email before signing in. Check your inbox and spam folder for the confirmation link.</p>
+      </form>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+        <button id="toggleDebug" type="button" style="font-size:.9rem">Show debug</button>
+        <button id="copyDebug" type="button" style="font-size:.9rem">Copy debug</button>
+      </div>
+      <pre id="debugOutput" style="display:none;margin-top:8px;padding:8px;background:#111;color:#dcdcdc;border-radius:6px;max-height:220px;overflow:auto;font-size:.85rem"></pre>
+    </div>
+  </section>
+  <section id="dashboardSection" hidden>
+    <div class="section-title"><h2>Service requests</h2><p id="dashboardMessage">Loading…</p></div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <h3 id="totalTickets">0</h3>
+        <span>Total Tickets</span>
+      </div>
+
+      <div class="stat-card">
+        <h3 id="openTickets">0</h3>
+        <span>Open</span>
+      </div>
+
+      <div class="stat-card">
+        <h3 id="resolvedTickets">0</h3>
+        <span>Resolved</span>
+      </div>
+
+      <div class="stat-card">
+        <h3 id="technicianOnline">1</h3>
+        <span>Online</span>
+      </div>
+    </div>
+
+    <input id="ticketSearch" type="text" placeholder="Search ticket..." class="ticket-search">
+    <div style="margin-bottom:8px"><span id="lastRefresh"></span></div>
+    <div id="ticketList" class="cards"></div>
+  </section>
+</main>
+
+<footer><h2>Lesedi ICT Solutions</h2><p>Technician access only</p></footer>
+
+<script src="assets/js/supabase-config.js"></script>
+<script>
+let accessToken=sessionStorage.getItem('lesedi-tech-token');
+const loginSection=document.getElementById('loginSection');
+const dashboardSection=document.getElementById('dashboardSection');
+const ticketList=document.getElementById('ticketList');
+const dashboardMessage=document.getElementById('dashboardMessage');
+const loginEmail=document.getElementById('loginEmail');
+const loginPassword=document.getElementById('loginPassword');
+const technicianName=document.getElementById('technicianName');
+const technicianPhone=document.getElementById('technicianPhone');
+const authOptions=(options={})=>({...options,headers:{...options.headers,Authorization:`Bearer ${accessToken}`}});
+
+const totalTicketsEl = () => document.getElementById('totalTickets');
+const openTicketsEl = () => document.getElementById('openTickets');
+const resolvedTicketsEl = () => document.getElementById('resolvedTickets');
+const technicianOnlineEl = () => document.getElementById('technicianOnline');
+const lastRefreshEl = () => document.getElementById('lastRefresh');
+const ticketSearchEl = () => document.getElementById('ticketSearch');
+const logoutBtn = () => document.getElementById('logoutBtn');
+
+// Logout handler
+document.addEventListener('click', e => {
+  if(e.target && e.target.id === 'logoutBtn'){
+    sessionStorage.removeItem('lesedi-tech-token');
+    location.reload();
+  }
+});
+
+// Ticket search handler
+document.addEventListener('input', e => {
+  if(!ticketSearchEl()) return;
+  if(e.target && e.target.id === 'ticketSearch'){
+    const search = e.target.value.toLowerCase();
+    document.querySelectorAll('#ticketList .card').forEach(card => {
+      card.style.display = card.textContent.toLowerCase().includes(search) ? '' : 'none';
+    });
+  }
+});
+
+async function fetchCurrentUser(){
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/user`,{
+    headers:{apikey:SUPABASE_PUBLISHABLE_KEY,Authorization:`Bearer ${accessToken}`}
+  });
+  if(!res.ok) throw new Error(`Could not fetch current user (${res.status})`);
+  return res.json();
+}
+
+async function ensureTechnicianProfile(){
+  if(!accessToken) return;
+  try{
+    const user = await fetchCurrentUser();
+    const existing = await supabaseRequest(`technician_profiles?select=user_id,email,approved&user_id=eq.${user.id}`, authOptions());
+    debugLog({stage:'ensure-profile-check',user_id:user.id,existing});
+    if(Array.isArray(existing) && existing.length){
+      // Auto-approve existing profile if not approved
+      const prof = existing[0];
+      if(!prof.approved){
+        try{
+          await supabaseRequest(`technician_profiles?user_id=eq.${user.id}`, authOptions({
+            method:'PATCH',
+            headers:{'Content-Type':'application/json',Prefer:'return=minimal'},
+            body:JSON.stringify({approved:true})
+          }));
+          debugLog({stage:'ensure-profile-auto-approved',user_id:user.id});
+          prof.approved = true;
+        }catch(e){debugLog({stage:'ensure-profile-approve-error',error:e.toString()})}
+      }
+      return prof;
+    }
+    await supabaseRequest('technician_profiles', authOptions({
+      method:'POST',
+      headers:{'Content-Type':'application/json',Prefer:'return=minimal'},
+      body:JSON.stringify({user_id:user.id,email:user.email,approved:true})
+    }));
+    debugLog({stage:'ensure-profile-created',user_id:user.id});
+  }catch(err){
+    console.warn('Could not ensure technician profile',err);
+    debugLog({stage:'ensure-profile-error',error:err.toString()});
+  }
+}
+
+let prevStates={};
+let pollTimer=null;
+const POLL_INTERVAL=5000;
+
+function showToast(text,type=''){
+  const container=document.getElementById('toastContainer')||document.createElement('div');
+  container.id='toastContainer';
+  if(!document.body.contains(container))document.body.appendChild(container);
+  const t=document.createElement('div');t.className=`toast ${type||''}`;t.textContent=text;container.appendChild(t);
+  setTimeout(()=>{t.style.transition='opacity .35s';t.style.opacity='0';setTimeout(()=>t.remove(),400)},4000);
+}
+
+function notifyStatusChange(ticketNumber,newStatus,source='remote'){
+  showToast(`${ticketNumber}: ${newStatus}${source==='local'?' (you)':''}`, source==='local' ? 'success' : '');
+  const card = ticketList.querySelector(`article.card[data-ticket="${ticketNumber}"]`);
+  if(card){
+    const sel = card.querySelector('select');
+    if(sel && sel.value !== newStatus) sel.value = newStatus;
+    const msg = card.querySelector('.request-status');
+    if(msg){ msg.className = 'request-status success'; msg.textContent = source==='local' ? 'Status updated.' : `Status changed to "${newStatus}".`; }
+    card.classList.add('highlight');
+    setTimeout(()=>card.classList.remove('highlight'),3500);
+  }
+}
+
+async function loadTickets(){
+  try{
+    // Approval check disabled for immediate access. Tighten security later.
+    const approved = true;
+    const [requests,statuses]=await Promise.all([
+      supabaseRequest('service_requests?select=ticket_number,name,email,phone,preferred_contact_time,service,description,created_at&order=created_at.desc',authOptions()),
+      supabaseRequest('ticket_statuses?select=ticket_number,status',authOptions())
+    ]);
+    const states=Object.fromEntries(statuses.map(x=>[x.ticket_number,x.status]));
+
+    // detect remote changes compared to previous poll
+    for(const tn in states){
+      if(prevStates[tn] && prevStates[tn] !== states[tn]){
+        notifyStatusChange(tn, states[tn], 'remote');
+      }
+    }
+    prevStates = {...states};
+    // Update dashboard counters and last refresh
+    try{
+      if(totalTicketsEl()) totalTicketsEl().textContent = requests.length;
+      if(resolvedTicketsEl()) resolvedTicketsEl().textContent = requests.filter(x => states[x.ticket_number] === 'Resolved').length;
+      if(openTicketsEl()) openTicketsEl().textContent = requests.filter(x => ['Request received','In progress'].includes(states[x.ticket_number])).length;
+      if(technicianOnlineEl()) technicianOnlineEl().textContent = 1;
+      if(lastRefreshEl()) lastRefreshEl().textContent = 'Last Updated: ' + new Date().toLocaleTimeString();
+    }catch(e){/* ignore if elements missing */}
+
+    ticketList.replaceChildren();
+    dashboardMessage.textContent = requests.length?`${requests.length} request(s) found.`:'No service requests yet. Submit a test request from index.html.';
+    requests.forEach(r=>ticketList.append(ticketCard(r,states[r.ticket_number]||'Request received')))
+  }catch{
+    dashboardMessage.textContent='Could not load requests. Check the SQL setup and sign in again.'
+  }
+}
+
+function ticketCard(r,current){
+  const card=document.createElement('article');card.className='card';card.dataset.ticket=r.ticket_number;
+  const heading=document.createElement('h3');heading.textContent=`${r.ticket_number} — ${r.service}`;
+  const details=document.createElement('p');details.textContent=`${r.name} · ${r.email} · ${r.phone||'No phone'} · ${r.preferred_contact_time}`;
+  const desc=document.createElement('p');desc.textContent=r.description;
+  const priority=document.createElement('select');
+  ['Low','Medium','High','Critical'].forEach(v=>priority.add(new Option(v,v,false,v===r.priority)));
+  // set priority default if provided
+  if(r.priority) priority.value = r.priority;
+
+  const status=document.createElement('select');['Request received','In progress','Waiting for client','Resolved','Closed'].forEach(v=>status.add(new Option(v,v,false,v===current)));
+  const update=document.createElement('button');update.type='button';update.textContent='Update Status';
+  const reply=document.createElement('textarea');reply.placeholder='Write a reply for the client…';
+  const send=document.createElement('button');send.type='button';send.textContent='Send Reply';
+  const message=document.createElement('p');message.className='request-status';
+
+  update.onclick=async()=>{
+    try{
+      await supabaseRequest('rpc/update_ticket_status',authOptions({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({p_ticket_number:r.ticket_number,p_status:status.value})}));
+      message.className='request-status success';message.textContent='Status updated.';
+      // update local state and notify UI
+      prevStates[r.ticket_number]=status.value;
+      notifyStatusChange(r.ticket_number,status.value,'local');
+    }catch(error){message.className='request-status error';message.textContent=`Could not update status: ${error.message}`}}
+
+  send.onclick=async()=>{if(!reply.value.trim())return;try{await supabaseRequest('ticket_replies',authOptions({method:'POST',headers:{'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({ticket_number:r.ticket_number,message:reply.value.trim()})}));reply.value='';message.className='request-status success';message.textContent='Reply saved for the client.'}catch(error){message.className='request-status error';message.textContent=`Could not send reply: ${error.message}`}};
+
+  card.append(heading,details,desc,priority,status,update,reply,send,message);return card
+}
+
+document.getElementById('loginForm').onsubmit=async e=>{
+  e.preventDefault();
+  const msg=document.getElementById('loginMessage');
+  msg.className='request-status'; msg.textContent='Signing in…';
+  try{
+    const res=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`,{
+      method:'POST',
+      headers:{apikey:SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({email:loginEmail.value,password:loginPassword.value})
+    });
+    const body = await res.json().catch(()=>null);
+    if(!res.ok){
+      console.error('Sign-in failed', res.status, body);
+      msg.className='request-status error';
+      if(body?.error_code === 'invalid_credentials'){
+        msg.innerHTML = 'Invalid login credentials. If you just signed up, please confirm your email before signing in. Check your inbox/spam folder and click the confirmation link. If the email never arrived, verify the user in Supabase Auth and confirm the account manually.';
+      } else {
+        msg.textContent = body?.error_description || body?.message || JSON.stringify(body) || `Sign-in failed (${res.status})`;
+      }
+      return;
+    }
+    accessToken = body.access_token;
+    if(!accessToken){
+      console.error('No access token in sign-in response', body);
+      msg.className='request-status error';
+      msg.textContent='Sign-in succeeded but no access token was returned.';
+      return;
+    }
+    sessionStorage.setItem('lesedi-tech-token',accessToken);
+    loginSection.hidden=true;dashboardSection.hidden=false;
+    await ensureTechnicianProfile();
+    await loadTickets();
+    if(!pollTimer)pollTimer=setInterval(loadTickets,POLL_INTERVAL);
+  }catch(err){
+    console.error('Sign-in error',err);
+    msg.className='request-status error';
+    msg.textContent='Sign-in failed. Check your email and password and open the console for details.';
+  }
+};
+
+if(accessToken){
+  loginSection.hidden=true;
+  dashboardSection.hidden=false;
+  ensureTechnicianProfile().then(()=>{
+    loadTickets().then(()=>{if(!pollTimer)pollTimer=setInterval(loadTickets,POLL_INTERVAL)});
+  });
+}
+
+document.getElementById('signupButton').onclick=async()=>{
+  const msg=document.getElementById('loginMessage');
+  if(!loginEmail.value||!loginPassword.value){msg.className='request-status error';msg.textContent='Enter an email and password first.';return}
+  msg.className='request-status'; msg.textContent='Creating account…';
+  try{
+    const fullName = technicianName.value.trim();
+    const phone = technicianPhone.value.trim();
+    const signupPayload = {
+      email: loginEmail.value,
+      password: loginPassword.value,
+      data: {
+        full_name: fullName || null,
+        phone: phone || null
+      }
+    };
+    debugLog({stage:'signup-request',url:`${SUPABASE_URL}/auth/v1/signup`,payload:{email:signupPayload.email, data:signupPayload.data}});
+    const res=await fetch(`${SUPABASE_URL}/auth/v1/signup`,{
+      method:'POST',
+      mode:'cors',
+      credentials:'omit',
+      headers:{
+        apikey:SUPABASE_PUBLISHABLE_KEY,
+        Authorization:`Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        'Content-Type':'application/json'
+      },
+      body:JSON.stringify(signupPayload)
+    });
+    const contentType = res.headers.get('content-type') || '';
+    const body = contentType.includes('application/json') ? await res.json().catch(()=>null) : { text: await res.text().catch(()=>null) };
+    debugLog({stage:'signup',status:res.status,ok:res.ok,body});
+    if(!res.ok){
+      console.error('Signup failed', res.status, body);
+      msg.className='request-status error';
+      msg.textContent = body?.message || body?.error || JSON.stringify(body) || `Signup failed (${res.status})`;
+      return;
+    }
+    console.log('Signup response', body);
+    msg.className='request-status success';
+    // If Supabase sent a confirmation email, make that explicit to the user.
+    if(body?.confirmation_sent_at){
+      msg.innerHTML = 'Account created. Please check your email and follow the confirmation link before signing in. After confirmation, sign in with the same email and password.';
+      debugLog({stage:'post-signup-signin',status:200,body:{message:'skipped-until-email-confirmation'}});
+    } else {
+    msg.textContent='Account created and auto-approved. You can sign in now.';
+
+      // When email confirmation is disabled, try signing in automatically.
+      try{
+        const signin = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`,{
+          method:'POST',
+          headers:{apikey:SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},
+          body:JSON.stringify({email:loginEmail.value,password:loginPassword.value})
+        });
+        const signBody = await signin.json().catch(()=>null);
+        debugLog({stage:'post-signup-signin',status:signin.status,body:signBody});
+        if(signin.ok && signBody?.access_token){
+          accessToken=signBody.access_token;sessionStorage.setItem('lesedi-tech-token',accessToken);
+          loginSection.hidden=true;dashboardSection.hidden=false;
+          await ensureTechnicianProfile();
+          await loadTickets();
+          if(!pollTimer)pollTimer=setInterval(loadTickets,POLL_INTERVAL);
+        }else{
+          console.warn('Auto sign-in failed', signin.status, signBody);
+        }
+      }catch(siErr){console.error('Auto sign-in error',siErr);debugLog({stage:'post-signup-signin-error',error:siErr.toString()});}
+    }
+  }catch(err){
+    console.error('Signup error',err);
+    debugLog({stage:'signup-exception',error:err.toString()});
+    msg.className='request-status error';
+    msg.textContent='Could not create the account. See console for details.';
+  }
+};
+
+// Debug helpers
+function debugLog(obj){
+  const out=document.getElementById('debugOutput');
+  out.style.display='block';
+  out.textContent = JSON.stringify(obj,null,2) + "\n\n" + out.textContent;
+}
+document.getElementById('toggleDebug').onclick=()=>{
+  const out=document.getElementById('debugOutput');
+  out.style.display = out.style.display==='none' ? 'block' : 'none';
+  document.getElementById('toggleDebug').textContent = out.style.display==='none' ? 'Show debug' : 'Hide debug';
+};
+document.getElementById('copyDebug').onclick=()=>{const out=document.getElementById('debugOutput');navigator.clipboard.writeText(out.textContent||'').then(()=>showToast('Debug copied to clipboard'))}
+
+</script>
+
+<div id="toastContainer" aria-live="polite"></div>
+
+</body>
+</html>
