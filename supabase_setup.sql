@@ -33,7 +33,7 @@ create policy "Visitors can submit service requests"
   on public.service_requests for insert to anon with check (true);
 
 drop policy if exists "Visitors can create initial ticket status" on public.ticket_statuses;
-create policy "Visitors can create initial ticket status"
+create policy "Visito rs can create initial ticket status"
   on public.ticket_statuses for insert to anon
   with check (status = 'Request received');
 
@@ -55,9 +55,18 @@ alter table public.ticket_replies enable row level security;
 -- Technician accounts can sign up, but require approval before accessing requests.
 create table if not exists public.technician_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  full_name text,
+  phone text,
   approved boolean not null default false,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+alter table public.technician_profiles add column if not exists email text;
+alter table public.technician_profiles add column if not exists full_name text;
+alter table public.technician_profiles add column if not exists phone text;
+alter table public.technician_profiles add column if not exists approved boolean;
+alter table public.technician_profiles add column if not exists updated_at timestamptz;
 alter table public.technician_profiles enable row level security;
 
 create or replace function public.create_technician_profile()
@@ -66,7 +75,28 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.technician_profiles (user_id) values (new.id) on conflict (user_id) do nothing;
+  insert into public.technician_profiles (
+    user_id,
+    email,
+    full_name,
+    phone,
+    approved,
+    updated_at
+  )
+  values (
+    new.id,
+    new.email,
+    coalesce(nullif(new.raw_user_meta_data->>'full_name', ''), nullif(new.raw_user_meta_data->>'name', '')),
+    nullif(new.raw_user_meta_data->>'phone', ''),
+    true,
+    now()
+  )
+  on conflict (user_id) do update set
+    email = excluded.email,
+    full_name = coalesce(excluded.full_name, public.technician_profiles.full_name),
+    phone = coalesce(excluded.phone, public.technician_profiles.phone),
+    approved = coalesce(public.technician_profiles.approved, excluded.approved),
+    updated_at = now();
   return new;
 end;
 $$;
@@ -75,8 +105,42 @@ drop trigger if exists on_technician_signup on auth.users;
 create trigger on_technician_signup after insert on auth.users
 for each row execute procedure public.create_technician_profile();
 
-insert into public.technician_profiles (user_id)
-select id from auth.users on conflict (user_id) do nothing;
+-- Optional alternative: restrict auto-approval to a trusted email domain
+-- (replace example.gov.za with your domain and uncomment to use)
+-- create or replace function public.create_technician_profile()
+-- returns trigger
+-- language plpgsql
+-- security definer set search_path = public
+-- as $$
+-- begin
+--   if new.email like '%@example.gov.za' then
+--     insert into public.technician_profiles (user_id, approved) values (new.id, true) on conflict (user_id) do nothing;
+--   else
+--     insert into public.technician_profiles (user_id, approved) values (new.id, false) on conflict (user_id) do nothing;
+--   end if;
+--   return new;
+-- end;
+-- $$;
+
+insert into public.technician_profiles (user_id, email, full_name, phone, approved, updated_at)
+select id, email, coalesce(nullif(raw_user_meta_data->>'full_name', ''), nullif(raw_user_meta_data->>'name', '')), nullif(raw_user_meta_data->>'phone', ''), true, now()
+from auth.users
+on conflict (user_id) do update set
+  email = excluded.email,
+  full_name = coalesce(excluded.full_name, public.technician_profiles.full_name),
+  phone = coalesce(excluded.phone, public.technician_profiles.phone),
+  approved = coalesce(public.technician_profiles.approved, excluded.approved),
+  updated_at = now();
+
+grant select, insert, update on public.technician_profiles to authenticated;
+
+drop policy if exists "Technicians can manage their own profile" on public.technician_profiles;
+create policy "Technicians can manage their own profile" on public.technician_profiles
+  for select to authenticated using (user_id = auth.uid());
+create policy "Technicians can create their own profile" on public.technician_profiles
+  for insert to authenticated with check (user_id = auth.uid() and (approved = false or approved is null));
+create policy "Technicians can update their own profile" on public.technician_profiles
+  for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid() and approved = public.technician_profiles.approved);
 
 create or replace function public.is_approved_technician()
 returns boolean
