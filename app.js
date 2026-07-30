@@ -91,3 +91,4 @@ document.querySelectorAll('.faq-item').forEach((item) => {
     item.classList.add('active');
   });
 });
+  
